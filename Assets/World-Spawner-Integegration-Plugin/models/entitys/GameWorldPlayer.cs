@@ -4,15 +4,25 @@ using System.Collections.Generic;
 using Newtonsoft.Json;
 
 public class GameWorldPlayer : Entity {
-	public float movementVelocity = BaseGameConstants.DEFAULTMOVEMENTVELOCITY;
+	public float movementVelocity = BaseGameConstants.DEFAULT_MOVEMENT_VELOCITY;
 
 	private float time;
 
-	protected override void OnEntityStart(){
-		if (!obj.vars.ContainsKey ("pX")) {
-			obj.vars.Add ("pX", "");
-			obj.vars.Add ("pY", "");
-		}
+	#region Final Vars
+	protected const string 
+	PLAYER_X = "px", 
+	PLAYER_Y = "py";
+		
+	#endregion
+
+	public override void Start(){
+		base.Start();
+
+		RegisterMethod(ClientMovePoint);
+
+		RegisterVar(PLAYER_X);
+		RegisterVar(PLAYER_Y);
+
 	}
 
 	#region Action implementation
@@ -31,18 +41,26 @@ public class GameWorldPlayer : Entity {
 	}
 	#endregion
 
-	protected override void OnEntityUpdate(){
-		if (obj.vars ["pX"] != "" && obj.vars ["pY"] != "" && time >= BaseGameConstants.POINTUPDATETIME) {
+	public override void Update(){
+		base.Update ();
+
+		if (GetAttribute (PLAYER_X) != "" && GetAttribute (PLAYER_Y) != "" && time >= BaseGameConstants.POINT_UPDATE_TIME) {
+			
 			UpdatePoint ();
 			time = 0;
-		}else if(obj.vars ["pX"] != "" && obj.vars ["pY"] != "")
+
+		} else if (time < BaseGameConstants.POINT_UPDATE_TIME) {
+			
 			time += Time.deltaTime;
 
-		if (obj.vars ["pX"] != "" && obj.vars ["pY"] != "")
+		}
+
+		if (GetAttribute (PLAYER_X) != "" && GetAttribute (PLAYER_Y) != "")
 			CheckForStop ();
 
-		if (obj.playerID == SystemInfo.deviceUniqueIdentifier)
+		if (playerID == SystemInfo.deviceUniqueIdentifier)
 			Camera.main.GetComponent<FollowCamera> ().follow = transform;
+		
 	}
 
 	/// <summary>
@@ -51,54 +69,49 @@ public class GameWorldPlayer : Entity {
 	/// <param name="newVelocity">New velocity.</param>
 	/// <param name="direction">Direction.</param>
 	public void LocalMovePoint(Vector2 point, float newVelocity){
-		Dictionary<int, string> args = new Dictionary<int, string> ();
-		args.Add ((int) WorldConstants.WorldVars.VELOCITY, newVelocity.ToString());
-		args.Add ((int) WorldConstants.WorldVars.X, point.x.ToString());
-		args.Add ((int) WorldConstants.WorldVars.Y, point.y.ToString());
-		ClientMovePoint (args);
-		obj.QueueChange (obj.id, (int) BaseGameConstants.BaseGameMethods.MOVE_CLIENT_POINT, args);
+
+		Parameters p = new Parameters();
+		p.AddParam (VELOCITY, newVelocity.ToString());
+		p.AddParam(X, point.x.ToString());
+		p.AddParam(Y, point.y.ToString());
+
+		ClientMovePoint (p);
+
+		QueueChange (ClientMovePoint, p);
+
 	}
 
 	/// <summary>
 	/// Moves the local entity to point when commanded from the ObjectCommunicator, as commanded by another client.
 	/// </summary>
 	/// <param name="par">Parameters.</param>
-	public void ClientMovePoint(Dictionary<int, string> par){
+	public void ClientMovePoint(Parameters par){
 
 
-		obj.vars[StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_X)] = 
-			float.Parse (par [(int) WorldConstants.WorldVars.X]).ToString();
-
-		obj.vars[StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_Y)] =
-			float.Parse (par [(int) WorldConstants.WorldVars.Y]).ToString();
+		SetAttribute (PLAYER_X, par.GetParamValue (X));
+		SetAttribute (PLAYER_Y, par.GetParamValue (Y));
+		SetAttribute (VELOCITY, par.GetParamValue (VELOCITY));
 		
-		obj.vars [StringValue.GetStringValue(WorldConstants.WorldVars.ROTATION)] = 
+		SetAttribute (ROTATION, 
 			JsonConvert.SerializeObject (
 				
-				new SerializableTransform (World.FindRotation(new Vector3(transform.position.x, 0, transform.position.z),
-					
-				new Vector3(float.Parse (par [(int) WorldConstants.WorldVars.X]), 
-							0, float.Parse (par [(int) WorldConstants.WorldVars.Z]))).eulerAngles)
+				new SerializableTransform (World.FindRotation (new Vector3 (transform.position.x, 0, transform.position.z),
+				new Vector3 (par.GetParamValueAsFloat (X), 0, par.GetParamValueAsFloat (Y))).eulerAngles)
 				
-			);
-		
-		obj.vars[StringValue.GetStringValue(WorldConstants.WorldVars.VELOCITY)] =
-			float.Parse (par [(int) WorldConstants.WorldVars.VELOCITY]).ToString();
+			));
 		
 	}
 
 	void UpdatePoint(){
 
 
-		obj.vars [StringValue.GetStringValue(WorldConstants.WorldVars.ROTATION)] =
+		SetAttribute (ROTATION, 
 			JsonConvert.SerializeObject (
-				
-				new SerializableTransform (World.FindRotation(new Vector3(transform.position.x, 0, transform.position.z),
-					
-				new Vector3(float.Parse (obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_X)]), 
-					0, float.Parse (obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_Y)]))).eulerAngles)
-				
-			);
+
+				new SerializableTransform (World.FindRotation (new Vector3 (transform.position.x, 0, transform.position.z),
+				new Vector3 (GetAttributeFloat(PLAYER_X), 0, GetAttributeFloat(PLAYER_Y))).eulerAngles)
+			
+			));
 
 
 	}
@@ -106,15 +119,13 @@ public class GameWorldPlayer : Entity {
 	void CheckForStop(){
 		
 		Vector2 currentPos = new Vector2 (transform.position.x, transform.position.z);
-
-		Vector2 goToPos = new Vector2 (float.Parse (obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_X)]), 
-			float.Parse (obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_Y)]));
+		Vector2 goToPos = new Vector2 (GetAttributeFloat(PLAYER_X), GetAttributeFloat(PLAYER_Y));
 		
-		if (Vector2.Distance (currentPos, goToPos) <= BaseGameConstants.POINTRELATIVEDISTANCE) {
+		if (Vector2.Distance (currentPos, goToPos) <= BaseGameConstants.POINT_RELATIVE_DISTANCE) {
 			
-			obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_X)] = "";
-			obj.vars [StringValue.GetStringValue(BaseGameConstants.BaseGameVars.POINT_Y)] = "";
-			obj.vars [StringValue.GetStringValue(WorldConstants.WorldVars.VELOCITY)] = "0";
+			SetAttribute (PLAYER_X, "");
+			SetAttribute (PLAYER_Y, "");
+			SetAttribute (VELOCITY, "0");
 
 		}
 
